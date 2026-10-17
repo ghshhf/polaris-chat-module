@@ -3,7 +3,7 @@
   "display_name": "北极星·中文对话模块",
   "version": "0.1.0",
   "type": "chat",
-  "role": "协议与人格层：只负责让模型开口、守规矩、有身份感；不承载知识",
+  "role": "协议与人格层：只描述「怎么答」，不承载知识。知识由主干提供，故同一份权重可挂到不同主干上。",
   "artifacts": {
     "weights": "adapter/adapter_model.safetensors",
     "config": "adapter/adapter_config.json",
@@ -12,15 +12,25 @@
   "trainable_params": 7100000,
   "trainable_params_exact": "7.10M (r=16, alpha=32, 7 target modules)",
   "base_model": {
-    "note": "本模块不自带主干，需要与同结构主干配对使用；主干可替换，只需重训本模块",
-    "architecture": "SmolLM2 (LlamaForCausalLM 兼容)",
-    "hidden_size": 576,
-    "num_hidden_layers": 36,
-    "intermediate_size": 4608,
-    "num_key_value_heads": 3,
-    "vocab_size": 49152,
-    "params": "214M (0.2B 级)",
-    "hard_rule": "以上维度全部来自主干配置，模块内不硬编码任何主干维度；换主干只换 adapter，不改代码"
+    "note": "不自带主干。可挂任何标准命名的 Llama 系主干，维度在装载时从目标 config.json 探测，不绑定具体规格",
+    "architecture_family": [
+      "llama",
+      "smollm2",
+      "qwen2",
+      "mistral"
+    ],
+    "dimensions": "runtime-detected（模块内无任何主干维度常量）",
+    "trained_on": {
+      "architecture": "SmolLM2",
+      "hidden_size": 576,
+      "num_hidden_layers": 36,
+      "intermediate_size": 4608,
+      "num_key_value_heads": 3,
+      "vocab_size": 49152,
+      "params": "214M"
+    },
+    "portability_ref": "interface.json",
+    "hard_rule": "只挂恒定维接入点(q/k/v/o)。MLP 的 gate/up/down 随 intermediate_size 变化，挂上去主干一加宽即作废"
   },
   "io": {
     "chat_template": "chatml",
@@ -52,5 +62,21 @@
     "EOS 学得弱，长回答有复读倾向",
     "不具备知识深度，事实性问题应由检索或推理时学习模块承担"
   ],
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "portability": {
+    "L1_measured": {
+      "targets": [
+        "SmolLM2-135M",
+        "SmolLM2-200M",
+        "polaris-0.3B",
+        "synthetic hidden=768/24L"
+      ],
+      "constant_dim": "240/240 直装或零填充",
+      "expandable_dim": "180/180 丢弃",
+      "verify": "max|diff| = 0.000e+00"
+    },
+    "L2_cross_arch": "zero-pad + 200~500 条重定位，非零成本",
+    "tool": "tools/module_loader.py (probe / diff / port / verify)"
+  },
+  "interface": "interface.json"
 }

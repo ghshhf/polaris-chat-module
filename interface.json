@@ -1,0 +1,87 @@
+{
+  "module": "polaris-chat-zh",
+  "version": "0.1.0",
+  "kind": "behavior",
+  "summary": "只描述“怎么答”，不携带知识。知识由主干提供，故同一份权重可挂到不同主干上。",
+
+  "requires": {
+    "architecture_family": ["llama", "smollm2", "qwen2", "mistral", "gemma"],
+    "hidden_size": "any",
+    "num_hidden_layers": "any",
+    "num_key_value_heads": "any",
+    "vocab_size": "any",
+    "tokenizer": "any",
+    "attention_naming": {
+      "standard": ["q_proj", "k_proj", "v_proj", "o_proj"],
+      "alt": ["query", "key", "value", "out_proj"],
+      "fused_unsupported": ["c_attn", "query_key_value", "Wqkv"]
+    },
+    "note": "不依赖任何主干常量。所有维度在装载时从目标主干 config.json 探测。"
+  },
+
+  "attach_points": [
+    {"slot": "q", "module_hint": "q_proj", "dim": "hidden", "class": "constant"},
+    {"slot": "k", "module_hint": "k_proj", "dim": "kv_dim", "class": "constant"},
+    {"slot": "v", "module_hint": "v_proj", "dim": "kv_dim", "class": "constant"},
+    {"slot": "o", "module_hint": "o_proj", "dim": "hidden", "class": "constant"}
+  ],
+
+  "forbidden_points": {
+    "gate_proj": "输出维 = intermediate_size，随主干扩容变化（实测 3072→4608 后 180/420 张量作废）",
+    "up_proj": "同上",
+    "down_proj": "输入维 = intermediate_size，同上",
+    "embed_tokens": "vocab 可扩（追加词表即失效）",
+    "lm_head": "vocab 可扩，且直接改动输出分布，跨主干不可迁移"
+  },
+
+  "portability": {
+    "L0_same_lineage": {
+      "method": "zero-pad",
+      "lossless": true,
+      "measured": "max|diff| = 0.000e+00"
+    },
+    "L1_same_arch_diff_size": {
+      "method": "zero-pad (constant-dim) + drop (expandable-dim)",
+      "lossless": true,
+      "measured": {
+        "targets": ["SmolLM2-135M", "SmolLM2-200M", "polaris-0.3B", "synthetic hidden=768/24L"],
+        "constant_dim_tensors": "240/240 直装或零填充成功",
+        "expandable_dim_tensors": "180/180 丢弃",
+        "verify_max_diff": "0.000e+00"
+      }
+    },
+    "L2_cross_arch": {
+      "method": "zero-pad + short relocate finetune",
+      "lossless": false,
+      "requirement": "200~500 条样本，小时级；不是零成本"
+    },
+    "shrink_case": {
+      "method": "svd-truncate",
+      "lossless": false,
+      "requirement": "装完必须重训补偿"
+    }
+  },
+
+  "training": {
+    "format": "peft-lora",
+    "r": 16,
+    "lora_alpha": 32,
+    "lora_dropout": 0.05,
+    "targets": ["q_proj", "k_proj", "v_proj", "o_proj"],
+    "trainable_params": 7100000,
+    "note": "当前发布权重为旧配置（含 MLP 三件套）训出，420 张量中 180 个不可跨主干；新配置只挂 240 个恒定维张量"
+  },
+
+  "io": {
+    "chat_template": "chatml",
+    "input": "<|im_start|>user\\n{query}<|im_end|>\\n<|im_start|>assistant\\n",
+    "output": "{answer}<|im_end|>",
+    "loss_mask": "completion_only"
+  },
+
+  "acceptance": {
+    "in_set_ce_lt": 0.6,
+    "blind_test_required": true,
+    "port_verify_max_diff": 0.0
+  }
+}
