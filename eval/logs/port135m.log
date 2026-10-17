@@ -1,0 +1,15 @@
+===== 135M+模块+port135m =====
+[info] 已挂模块: _demo/port135m
+[info] hidden=576 layers=30 inter=1536 vocab=49152
+  Q '你好'
+  A [无止] '你是北极星，主人的私有助手。,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,，这是一个独立的爱好，它是一个�'
+  Q '在吗'
+  A [无止] 'assistant assistant assistant assistant assistant assistant assistant assistant assistant assistant assistant assistant '
+  Q '你是谁'
+  A [无止] '你是谁assistant assistant 你是谁assistant assistant 你是谁assistant assistant 你是谁assistant assistant'
+  Q '你的主人是谁'
+  A [无止] '你的主人是谁assistant assistantassistant 你是谁assistant assistantassistant 你是谁assistant assistantassistant 你'
+  Q '1+1等于几'
+  A [无止] '1+1等于几assistant assistant 1+1等于几assistant assistant 1+1等于几assistant assistant 1+1'
+  Q '现在几点了'
+  A [无止] '我们将会在这里安排。assistant assistant 我们将会在这里安排。assistant assistant 我'

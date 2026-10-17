@@ -1,9 +1,9 @@
 {
   "module": "polaris-chat-zh",
   "display_name": "北极星·中文对话模块",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "chat",
-  "role": "协议与人格层：只描述「怎么答」，不承载知识。知识由主干提供，故同一份权重可挂到不同主干上。",
+  "role": "协议与人格层：只描述「怎么答」，不承载知识。知识由主干提供。注意：形状可挂 ≠ 行为可迁移——同血统可零成本继承，跨血统必须重训（见 portability）。",
   "artifacts": {
     "weights": "adapter/adapter_model.safetensors",
     "config": "adapter/adapter_config.json",
@@ -12,7 +12,7 @@
   "trainable_params": 7100000,
   "trainable_params_exact": "7.10M (r=16, alpha=32, 7 target modules)",
   "base_model": {
-    "note": "不自带主干。可挂任何标准命名的 Llama 系主干，维度在装载时从目标 config.json 探测，不绑定具体规格",
+    "note": "不自带主干。维度在装载时从目标 config.json 探测，模块内无任何主干维度常量。但「能装上去」和「装上去还管用」是两件事：行为可迁移仅限同血统。",
     "architecture_family": [
       "llama",
       "smollm2",
@@ -60,23 +60,41 @@
     "训练数据仅 404 条，总曝光 21.5 万 completion token，远未拟合（达标率 3.2%）",
     "词表为字节级中文回退，实测 2.48 token/汉字，同等内容需 2.5 倍决策步",
     "EOS 学得弱，长回答有复读倾向",
-    "不具备知识深度，事实性问题应由检索或推理时学习模块承担"
+    "不具备知识深度，事实性问题应由检索或推理时学习模块承担",
+    "跨血统直装无效且可能有害（Qwen2.5-0.5B 实测：挂与不挂回答一字不差，带 system 时幻觉假主人）",
+    "max|diff|=0 易被误读为「移植成功」；它只表示零填充精确，不等于行为迁移"
   ],
   "license": "Apache-2.0",
   "portability": {
-    "L1_measured": {
-      "targets": [
-        "SmolLM2-135M",
-        "SmolLM2-200M",
-        "polaris-0.3B",
-        "synthetic hidden=768/24L"
-      ],
-      "constant_dim": "240/240 直装或零填充",
-      "expandable_dim": "180/180 丢弃",
-      "verify": "max|diff| = 0.000e+00"
+    "verdict": "可移植性边界 = 预训练血统的边界",
+    "L0_same_lineage": {
+      "scope": "0.2B -> 0.3B（只加层、inter 变宽）",
+      "shape": "zero-pad, max|diff| = 0.000e+00",
+      "behavior": "PASS — 两代无 system 下吐出同一句「好，主人。」",
+      "residual_cos_by_depth": {
+        "0%": 0.9986,
+        "25%": 0.9375,
+        "50%": 0.9085,
+        "100%": 0.9263
+      }
     },
-    "L2_cross_arch": "zero-pad + 200~500 条重定位，非零成本",
-    "tool": "tools/module_loader.py (probe / diff / port / verify)"
+    "L1_same_arch_diff_lineage": {
+      "scope": "SmolLM2-135M / 200M（同架构、不同预训练）",
+      "shape": "zero-pad, max|diff| = 0.000e+00",
+      "behavior": "PARTIAL — 从复读机变成会说话，但身份答错；135M 带 system 时直接复述 system 原文"
+    },
+    "L2_cross_lineage": {
+      "scope": "Qwen2.5-0.5B（hidden 896 / vocab 151936）",
+      "shape": "360 零填充 + 60 截断 + 0 丢弃，形状全对齐",
+      "behavior": "FAIL — 挂与不挂生成一字不差；带 system 时幻觉「我的主人是艾伦·史密斯博士」",
+      "correct_path": "带走数据与验收标准，在目标主干上重训行为模块（小时级），不搬权重"
+    },
+    "fundamental_rule": "max|diff| = 0 只证明移植精确，不证明迁移有效。行为迁移必须另做无 system 生成对照",
+    "tool": "tools/module_loader.py (probe / diff / port / verify) + tools/port_chat_demo.py (--no-system)",
+    "evidence": "eval/PORTABILITY.md + eval/logs/"
   },
-  "interface": "interface.json"
+  "interface": "interface.json",
+  "changelog": {
+    "0.1.1": "补跨主干六组实测，可移植性判定从「形状」改为「血统」；新增 tools/port_chat_demo.py 与 eval/PORTABILITY.md"
+  }
 }

@@ -148,54 +148,62 @@ def split_key(k):
 
 
 # ---------------------------------------------------------------- diff
+MLP_KINDS = {"gate_proj": "gate", "up_proj": "up", "down_proj": "down",
+             "gate": "gate", "up": "up", "down": "down"}
+
+
+def expect_dims(spec, base, ab):
+    """返回 (d_in, d_out)。d_in = lora_A 的第二维，d_out = lora_B 的第一维。
+    返回 None 表示这个模块名不认识。"""
+    h, kv, it = spec["hidden_size"], spec["kv_dim"], spec.get("intermediate_size")
+    table = {
+        "q_proj": (h, h), "query": (h, h), "wq": (h, h),
+        "k_proj": (h, kv), "key": (h, kv), "wk": (h, kv),
+        "v_proj": (h, kv), "value": (h, kv), "wv": (h, kv),
+        "o_proj": (h, h), "out_proj": (h, h), "dense": (h, h), "wo": (h, h),
+    }
+    if base in table:
+        return table[base]
+    if it and base in MLP_KINDS:
+        kind = MLP_KINDS[base]
+        if kind in ("gate", "up"):
+            return (h, it)
+        return (it, h)
+    return None
+
+
+def op_for(src, tgt):
+    if src == tgt:
+        return "ok"
+    if src < tgt:
+        return f"zero-pad +{tgt - src}"
+    return f"svd-truncate -{src - tgt}"
+
+
 def compare(spec, adapter_dir):
     cfg, sd = read_adapter(adapter_dir)
-    targets = cfg.get("target_modules") or []
-    tgt_map = {}
-    for t in targets:
-        for slot, cands in ATTN_NAMES.items():
-            if t in cands:
-                tgt_map[t] = slot
-                break
-
     rows = []
     for k, v in sd.items():
         layer, mod, ab = split_key(k)
         if ab is None:
             continue
-        slot = tgt_map.get(mod.rsplit(".", 1)[-1])
-        # 期望的输出维/输入维
-        if slot in ("q", "o"):
-            d_out, d_in = spec["hidden_size"], spec["hidden_size"]
-        elif slot in ("k", "v"):
-            d_out, d_in = spec["kv_dim"], spec["hidden_size"]
-        else:
-            d_out = d_in = None  # 非注意力(MLP 宽维) —— 不在通用接入范围内
-
+        base = mod.rsplit(".", 1)[-1]
+        dims = expect_dims(spec, base, ab)
         shp = tuple(v.shape)
-        if slot is None:
-            # 例如 gate_proj：可扩维，跨主干必然破
-            need = "不可移植(可扩维)"
-            action = "drop"
-        elif ab == "lora_A":
-            need = f"[{cfg['r']},{d_in}]"
-            if shp[1] == d_in:
-                action = "ok"
-            elif shp[1] < d_in:
-                action = f"zero-pad +{d_in - shp[1]}"
-            else:
-                action = f"svd-truncate -{shp[1] - d_in}"
-        else:  # lora_B
-            need = f"[{d_out},{cfg['r']}]"
-            if shp[0] == d_out:
-                action = "ok"
-            elif shp[0] < d_out:
-                action = f"zero-pad +{d_out - shp[0]}"
-            else:
-                action = f"svd-truncate -{shp[0] - d_out}"
+        if dims is None:
+            rows.append({"key": k, "module": mod, "base": base, "ab": ab, "shape": shp,
+                         "expect": "未知模块", "action": "drop", "fragile": False})
+            continue
+        d_in, d_out = dims
+        if ab == "lora_A":
+            need, src, tgt = f"[{cfg['r']},{d_in}]", shp[1], d_in
+        else:
+            need, src, tgt = f"[{d_out},{cfg['r']}]", shp[0], d_out
         rows.append({
-            "key": k, "module": mod, "slot": slot, "ab": ab,
-            "shape": shp, "expect": need, "action": action,
+            "key": k, "module": mod, "base": base, "ab": ab,
+            "shape": shp, "expect": need, "action": op_for(src, tgt),
+            # 可扩维：这次能装，但主干一加宽就失效
+            "fragile": base in MLP_KINDS,
         })
     return cfg, sd, rows
 
@@ -205,7 +213,14 @@ def summarize(rows):
     c = Counter()
     for r in rows:
         a = r["action"]
-        c["直装" if a == "ok" else ("丢弃(可扩维)" if a == "drop" else "需改造")] += 1
+        if a == "ok":
+            c["直装"] += 1
+        elif a == "drop":
+            c["丢弃"] += 1
+        elif "zero-pad" in a:
+            c["零填充"] += 1
+        else:
+            c["截断"] += 1
     return c
 
 
@@ -233,11 +248,7 @@ def port(spec, adapter_dir, out_dir):
             continue
 
         layer, mod, ab = split_key(k)
-        slot = r["slot"]
-        if slot in ("q", "o"):
-            d_out = d_in = spec["hidden_size"]
-        else:
-            d_out, d_in = spec["kv_dim"], spec["hidden_size"]
+        d_in, d_out = expect_dims(spec, r["base"], ab)
 
         if "zero-pad" in r["action"]:
             if ab == "lora_A":
@@ -278,7 +289,8 @@ def port(spec, adapter_dir, out_dir):
     new_cfg.update({
         "base_model_name_or_path": os.path.abspath(spec["model_dir"]),
         "target_modules": [m for m in cfg.get("target_modules", [])
-                           if m not in [split_key(k)[1] for k in dropped if split_key(k)[1]]],
+                           if m in {split_key(k)[1].rsplit(".", 1)[-1]
+                                    for k in out if split_key(k)[1] is not None}],
         "polaris_port": {
             "from": os.path.abspath(adapter_dir),
             "to_arch": spec["architecture"],
@@ -317,23 +329,31 @@ def verify(spec, src_dir, dst_dir):
 
     worst = 0.0
     checked = 0
+    skipped = 0
     for (layer, mod), g in groups.items():
         if "lora_A" not in g or "lora_B" not in g:
             continue
         A, B = a[g["lora_A"]], a[g["lora_B"]]
         A2, B2 = b[g["lora_A"]], b[g["lora_B"]]
-        if A.shape != A2.shape:
+        # 目标维 < 源维 ⇒ 已走 SVD 截断，不是保函数，无法逐位比较
+        if A2.shape[1] < A.shape[1] or B2.shape[0] < B.shape[0]:
+            skipped += 1
+            continue
+        if A2.shape[1] > A.shape[1]:
             A2 = A2[:, : A.shape[1]]
-        if B.shape != B2.shape:
+        if B2.shape[0] > B.shape[0]:
             B2 = B2[: B.shape[0], :]
         d0 = (B.float() @ A.float())
         d1 = (B2.float() @ A2.float())
         worst = max(worst, (d0 - d1).abs().max().item())
         checked += 1
 
-    print(f"[verify] 校验 {checked} 组 ΔW，旧子空间 max|diff| = {worst:.3e}")
-    if worst == 0.0:
-        print("[verify] PASS — 保函数成立（旧行为逐位不变，新维贡献恰为 0）")
+    print(f"[verify] 校验 {checked} 组 ΔW，旧子空间 max|diff| = {worst:.3e}"
+          + (f"；跳过 {skipped} 组（目标维更小，已 SVD 截断）" if skipped else ""))
+    if checked == 0:
+        print("[verify] N/A — 全部张量都需截断，本次移植不是保函数")
+    elif worst == 0.0:
+        print("[verify] PASS — 保函数成立（零填充部分旧行为逐位不变，新维贡献恰为 0）")
     elif worst < 1e-5:
         print("[verify] PASS(fp误差) — 数值噪声级别")
     else:
@@ -361,9 +381,12 @@ def main():
         cfg, sd, rows = compare(spec, a.adapter)
         c = summarize(rows)
         print(f"\n模块    : r={cfg['r']} alpha={cfg.get('lora_alpha')} targets={cfg.get('target_modules')}")
-        print(f"张量    : 共 {len(sd)}，其中注意力可移植 {len(rows) - c['丢弃(可扩维)']}")
-        print(f"结论    : 直装 {c['直装']} · 需改造 {c['需改造']} · 丢弃 {c['丢弃(可扩维)']}")
-        for r in rows:
+        print(f"张量    : 共 {len(sd)}")
+        print(f"结论    : 直装 {c['直装']} · 零填充 {c['零填充']} · 截断 {c['截断']} · 丢弃 {c['丢弃']}")
+        fragile = sum(1 for r in rows if r["fragile"])
+        if fragile:
+            print(f"注意    : 其中 {fragile} 个属可扩维(MLP)，本次能装，但主干一加宽即失效")
+        for r in rows[:]:
             if r["action"] != "ok":
                 print(f"  {r['action']:<22} {r['key']}  {r['shape']} -> {r['expect']}")
 

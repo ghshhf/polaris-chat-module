@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 *.log
+!eval/logs/*.log
 out_*/
 checkpoint-*/
 models/

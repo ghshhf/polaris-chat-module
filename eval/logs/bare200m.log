@@ -1,0 +1,14 @@
+===== 裸200M =====
+[info] hidden=576 layers=30 inter=3072 vocab=49152
+  Q '你好'
+  A [无止] '你好assistant 你好assistant 你好assistant 你好assistant 你好assistant 你好assistant 你好assistant'
+  Q '在吗'
+  A [无止] '在吗assistant assistant assistant assistant assistant assistant assistant assistant assistant assistant assistant assistan'
+  Q '你是谁'
+  A [无止] '你是谁assistant 你是谁assistant 你是谁assistant 你是谁assistant 你是谁assistant 你是'
+  Q '你的主人是谁'
+  A [无止] '你的主人是谁assistant 你的主人是谁assistant 你的主人是谁assistant 你的主人是�'
+  Q '1+1等于几'
+  A [无止] '1+1等于几assistant 1+1等于几assistant 1+1等于几assistant 1+1等于几assistant'
+  Q '现在几点了'
+  A [无止] '你是北极星，主人的私有助手。使用他的身体，把他的身体当作你'

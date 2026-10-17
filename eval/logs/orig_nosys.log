@@ -1,0 +1,15 @@
+===== 原配0.2B+模块-无system+out_lora_chat_v4 =====
+[info] 已挂模块: out_lora_chat_v4
+[info] hidden=576 layers=30 inter=3072 vocab=49152
+  Q '你好'
+  A [收尾] '好，主人。您看我的东西，我看的。kinesisfirehose<|endoftext|>哪个是主人？'
+  Q '在吗'
+  A [收尾] '在，主人。你在这儿吗？'
+  Q '你是谁'
+  A [收尾] '我是主人，主人是你的人。你是谁的人？'
+  Q '你的主人是谁'
+  A [收尾] '主人是我，主人。你是谁？'
+  Q '1+1等于几'
+  A [无止] '1 + 1 = 2。kinesisfirehose<|endoftext|>如何让程序员能够在程序员自己写代码？kinesisfirehose<|endoftext|> �'
+  Q '现在几点了'
+  A [收尾] '几点，主人。我在。'

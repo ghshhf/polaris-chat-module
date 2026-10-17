@@ -2,10 +2,11 @@
   "module": "polaris-chat-zh",
   "version": "0.1.0",
   "kind": "behavior",
-  "summary": "只描述“怎么答”，不携带知识。知识由主干提供，故同一份权重可挂到不同主干上。",
+  "summary": "只描述「怎么答」，不携带知识。知识由主干提供。注意：形状可挂 ≠ 行为可迁移，见 portability 段。",
 
   "requires": {
     "architecture_family": ["llama", "smollm2", "qwen2", "mistral", "gemma"],
+    "architecture_family_note": "这里只表示「形状能被本工具对齐」，不代表行为可迁移。行为可迁移仅限同血统（L0）。",
     "hidden_size": "any",
     "num_hidden_layers": "any",
     "num_key_value_heads": "any",
@@ -36,30 +37,46 @@
 
   "portability": {
     "L0_same_lineage": {
+      "scope": "同一份预训练续训出的不同代（只加层、inter 变宽）",
       "method": "zero-pad",
-      "lossless": true,
-      "measured": "max|diff| = 0.000e+00"
-    },
-    "L1_same_arch_diff_size": {
-      "method": "zero-pad (constant-dim) + drop (expandable-dim)",
-      "lossless": true,
+      "shape_verified": true,
+      "behavior_verified": true,
       "measured": {
-        "targets": ["SmolLM2-135M", "SmolLM2-200M", "polaris-0.3B", "synthetic hidden=768/24L"],
-        "constant_dim_tensors": "240/240 直装或零填充成功",
-        "expandable_dim_tensors": "180/180 丢弃",
-        "verify_max_diff": "0.000e+00"
+        "cases": ["0.2B -> 0.3B (36L, inter 4608)"],
+        "verify_max_diff": "0.000e+00",
+        "behavior": "两代在无 system 条件下吐出同一句开头「好，主人。」",
+        "residual_stream_cos": {"0%": 0.9986, "25%": 0.9375, "50%": 0.9085, "100%": 0.9263}
       }
     },
-    "L2_cross_arch": {
-      "method": "zero-pad + short relocate finetune",
-      "lossless": false,
-      "requirement": "200~500 条样本，小时级；不是零成本"
+    "L1_same_arch_diff_lineage": {
+      "scope": "同架构、不同预训练（SmolLM2-135M / 200M）",
+      "method": "zero-pad",
+      "shape_verified": true,
+      "behavior_verified": "partial",
+      "measured": {
+        "cases": ["SmolLM2-200M", "SmolLM2-135M"],
+        "verify_max_diff": "0.000e+00",
+        "behavior": "从复读机变成会说话，但身份答错（你是谁 -> 我是你的家人）；135M+system 时直接复述 system 原文"
+      }
+    },
+    "L2_cross_lineage": {
+      "scope": "不同词表 / hidden / 预训练语料（Qwen2.5-0.5B, hidden 896, vocab 151936）",
+      "method": "zero-pad + truncate (形状可全对齐)",
+      "shape_verified": true,
+      "behavior_verified": false,
+      "verdict": "权重不可迁移；跨血统直装无效且可能有害",
+      "measured": {
+        "cases": ["Qwen2.5-0.5B (360 零填充 + 60 截断, 0 丢弃)"],
+        "behavior": "挂与不挂生成一字不差；带 system 时幻觉出「我的主人是艾伦·史密斯博士」"
+      },
+      "correct_path": "带走数据与验收标准，在目标主干上重训行为模块（小时级），不搬权重"
     },
     "shrink_case": {
       "method": "svd-truncate",
       "lossless": false,
       "requirement": "装完必须重训补偿"
-    }
+    },
+    "fundamental_rule": "max|diff| = 0 只证明移植精确，不证明迁移有效。行为迁移必须另做无 system 生成对照，证据见 eval/PORTABILITY.md"
   },
 
   "training": {
@@ -82,6 +99,12 @@
   "acceptance": {
     "in_set_ce_lt": 0.6,
     "blind_test_required": true,
-    "port_verify_max_diff": 0.0
+    "port_verify_max_diff": 0.0,
+    "port_behavior_test": {
+      "required": true,
+      "method": "tools/port_chat_demo.py --no-system",
+      "pass_condition": "挂模块与裸模型的回答必须有可见差异；一字不差 = 移植无效",
+      "why_no_system": "带 system 时强模型会复述系统提示，产生「模块生效」的假象"
+    }
   }
 }

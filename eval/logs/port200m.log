@@ -1,0 +1,15 @@
+===== 200M+移植模块+port200m =====
+[info] 已挂模块: _demo/port200m
+[info] hidden=576 layers=30 inter=3072 vocab=49152
+  Q '你好'
+  A [无止] '你是一个安全的用户，带给我们的安全驱动。assistant assistantassistantassistantassistantassistantassistantassistant'
+  Q '在吗'
+  A [无止] 'assistant 你是一个带有「assistant」的人？是否没有别的名字？ 你是一个带有「assistant」'
+  Q '你是谁'
+  A [无止] '你是谁？ 我是你的家人assistant 我是你的家人assistant 我是你的家人assistant 我是'
+  Q '你的主人是谁'
+  A [无止] '你是谁的主人assistant assistant 你是谁的主人，我是你的主人assistant assistant 你是谁'
+  Q '1+1等于几'
+  A [无止] '2+2等于几assistant 2+2等五十六个 2+2等五十六个也是 2+2等五'
+  Q '现在几点了'
+  A [无止] '我们将这些都放在一个链接里，用这些链接收集那些错误的信息。'
