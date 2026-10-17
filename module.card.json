@@ -1,0 +1,56 @@
+{
+  "module": "polaris-chat-zh",
+  "display_name": "北极星·中文对话模块",
+  "version": "0.1.0",
+  "type": "chat",
+  "role": "协议与人格层：只负责让模型开口、守规矩、有身份感；不承载知识",
+  "artifacts": {
+    "weights": "adapter/adapter_model.safetensors",
+    "config": "adapter/adapter_config.json",
+    "format": "peft-lora"
+  },
+  "trainable_params": 7100000,
+  "trainable_params_exact": "7.10M (r=16, alpha=32, 7 target modules)",
+  "base_model": {
+    "note": "本模块不自带主干，需要与同结构主干配对使用；主干可替换，只需重训本模块",
+    "architecture": "SmolLM2 (LlamaForCausalLM 兼容)",
+    "hidden_size": 576,
+    "num_hidden_layers": 36,
+    "intermediate_size": 4608,
+    "num_key_value_heads": 3,
+    "vocab_size": 49152,
+    "params": "214M (0.2B 级)",
+    "hard_rule": "以上维度全部来自主干配置，模块内不硬编码任何主干维度；换主干只换 adapter，不改代码"
+  },
+  "io": {
+    "chat_template": "chatml",
+    "input": "<|im_start|>user\\n{query}<|im_end|>\\n<|im_start|>assistant\\n",
+    "output": "{answer}<|im_end|>",
+    "loss_mask": "completion_only (prompt 全部 -100)"
+  },
+  "acceptance": {
+    "in_set_fit": "completion CE < 0.60 才算该样本学会",
+    "blind_test": "必须用训练集未出现的输入 + 已知答案对照，禁止只看 loss",
+    "overfit_probe": "40 条最短样本、lr 5e-4、dropout 0，loss 必须能降到 < 0.30（证明管道通）",
+    "measured": {
+      "in_set_ce": 1.578,
+      "in_set_ppl": 4.84,
+      "samples_under_0_60": "14 / 439 (3.2%)",
+      "overfit_probe_result": "PASS: 5.1961 -> 0.2845 (90 steps)"
+    },
+    "verdict": "管道已验证通，拟合未达成 —— 见 LIMITATIONS"
+  },
+  "data": {
+    "public_samples": "data/chat_sft_public.jsonl (304 条)",
+    "full_corpus_size": 404,
+    "reason_not_full": "完整语料含个人对话与私有项目片段，按最小暴露原则只开源脱敏子集",
+    "language": "zh (少量 en)"
+  },
+  "limitations": [
+    "训练数据仅 404 条，总曝光 21.5 万 completion token，远未拟合（达标率 3.2%）",
+    "词表为字节级中文回退，实测 2.48 token/汉字，同等内容需 2.5 倍决策步",
+    "EOS 学得弱，长回答有复读倾向",
+    "不具备知识深度，事实性问题应由检索或推理时学习模块承担"
+  ],
+  "license": "Apache-2.0"
+}
